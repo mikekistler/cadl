@@ -850,12 +850,9 @@ function createOAPIEmitter(program: Program, options: OpenAPIEmitterOptions) {
 
         return schema;
       } else {
-        reportDiagnostic(program, {
-          code: "union-unsupported",
-          messageId: "null",
-          target: union,
-        });
-        return {};
+        const schema: any = { anyOf: nonNullOptions.map((s) => getSchemaOrRef(s)) };
+
+        return schema;
       }
     }
 

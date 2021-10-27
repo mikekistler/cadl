@@ -375,6 +375,146 @@ describe("openapi3: definitions", () => {
     strictEqual(diagnostics.length, 1);
     match(diagnostics[0].message, /Empty unions are not supported for OpenAPI v3/);
   });
+
+  it("defines request bodies as unions of models", async () => {
+    const openApi = await openApiFor(`
+      model Foo {
+        y: int32;
+      };
+      model Bar {
+        z: string;
+      };
+      @resource("/")
+      namespace root {
+        op create(@body body: Foo | Bar): OkResponse<{}>;
+      }
+      `);
+    ok(openApi.components.schemas.Foo, "expected definition named Foo");
+    ok(openApi.components.schemas.Bar, "expected definition named Bar");
+    deepStrictEqual(openApi.paths["/"].post.requestBody.content["application/json"].schema, {
+      "x-cadl-name": "Foo | Bar",
+      anyOf: [{ $ref: "#/components/schemas/Foo" }, { $ref: "#/components/schemas/Bar" }],
+    });
+  });
+
+  it("defines request bodies as unions of model and non-model types", async () => {
+    const openApi = await openApiFor(`
+      model Foo {
+        y: int32;
+      };
+      @resource("/")
+      namespace root {
+        op create(@body body: Foo | string): OkResponse<{}>;
+      }
+      `);
+    ok(openApi.components.schemas.Foo, "expected definition named Foo");
+    deepStrictEqual(openApi.paths["/"].post.requestBody.content["application/json"].schema, {
+      "x-cadl-name": "Foo | Cadl.string",
+      anyOf: [{ $ref: "#/components/schemas/Foo" }, { type: "string" }],
+    });
+  });
+  it("defines request bodies aliased to a union of models", async () => {
+    const openApi = await openApiFor(`
+    model Foo {
+      y: int32;
+    };
+    model Bar {
+      z: string;
+    };
+    alias Baz = Foo | Bar;
+    @resource("/")
+    namespace root {
+      op create(@body body: Baz): OkResponse<{}>;
+    }
+    `);
+    ok(openApi.components.schemas.Foo, "expected definition named Foo");
+    ok(openApi.components.schemas.Bar, "expected definition named Bar");
+    deepStrictEqual(openApi.paths["/"].post.requestBody.content["application/json"].schema, {
+      "x-cadl-name": "Foo | Bar",
+      anyOf: [{ $ref: "#/components/schemas/Foo" }, { $ref: "#/components/schemas/Bar" }],
+    });
+  });
+
+  it("defines response bodies as unions of models", async () => {
+    const openApi = await openApiFor(`
+      model Foo {
+        y: int32;
+      };
+      model Bar {
+        z: string;
+      };
+      @resource("/")
+      namespace root {
+        op read(): { @body body: Foo | Bar };
+      }
+      `);
+    ok(openApi.components.schemas.Foo, "expected definition named Foo");
+    ok(openApi.components.schemas.Bar, "expected definition named Bar");
+    deepStrictEqual(openApi.paths["/"].get.responses["200"].content["application/json"].schema, {
+      "x-cadl-name": "Foo | Bar",
+      anyOf: [{ $ref: "#/components/schemas/Foo" }, { $ref: "#/components/schemas/Bar" }],
+    });
+  });
+
+  it("defines response bodies as unions of model and non-model types", async () => {
+    const openApi = await openApiFor(`
+    model Foo {
+      y: int32;
+    };
+    @resource("/")
+    namespace root {
+      op read(): { @body body: Foo | string };
+    }
+    `);
+    ok(openApi.components.schemas.Foo, "expected definition named Foo");
+    deepStrictEqual(openApi.paths["/"].get.responses["200"].content["application/json"].schema, {
+      "x-cadl-name": "Foo | Cadl.string",
+      anyOf: [{ $ref: "#/components/schemas/Foo" }, { type: "string" }],
+    });
+  });
+
+  it("defines response bodies aliased to a union from models", async () => {
+    const openApi = await openApiFor(`
+      model Foo {
+        y: int32;
+      };
+      model Bar {
+        z: string;
+      };
+      alias Baz = Foo | Bar;
+      @resource("/")
+      namespace root {
+        op read(): { @body body: Baz };
+      }
+      `);
+    ok(openApi.components.schemas.Foo, "expected definition named Foo");
+    ok(openApi.components.schemas.Bar, "expected definition named Bar");
+    deepStrictEqual(openApi.paths["/"].get.responses["200"].content["application/json"].schema, {
+      "x-cadl-name": "Foo | Bar",
+      anyOf: [{ $ref: "#/components/schemas/Foo" }, { $ref: "#/components/schemas/Bar" }],
+    });
+  });
+
+  it("defines response bodies unioned in OkResponse as unions of models", async () => {
+    const openApi = await openApiFor(`
+      model Foo {
+        y: int32;
+      };
+      model Bar {
+        z: string;
+      };
+      @resource("/")
+      namespace root {
+        op read(): OkResponse<Foo | Bar>;
+      }
+      `);
+    ok(openApi.components.schemas.Foo, "expected definition named Foo");
+    ok(openApi.components.schemas.Bar, "expected definition named Bar");
+    deepStrictEqual(openApi.paths["/"].get.responses["200"].content["application/json"].schema, {
+      "x-cadl-name": "Foo | Bar",
+      anyOf: [{ $ref: "#/components/schemas/Foo" }, { $ref: "#/components/schemas/Bar" }],
+    });
+  });
 });
 
 describe("openapi3: primitives", () => {
