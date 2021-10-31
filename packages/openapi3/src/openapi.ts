@@ -22,6 +22,7 @@ import {
   Program,
   Type,
   UnionType,
+  UnionTypeVariant,
 } from "@cadl-lang/compiler";
 import {
   basePathForResource,
@@ -769,6 +770,8 @@ function createOAPIEmitter(program: Program, options: OpenAPIEmitterOptions) {
       return getSchemaForModel(type);
     } else if (type.kind === "Union") {
       return getSchemaForUnion(type);
+    } else if (type.kind === "UnionVariant") {
+      return getSchemaForUnionVariant(type);
     } else if (type.kind === "Enum") {
       return getSchemaForEnum(type);
     }
@@ -836,6 +839,9 @@ function createOAPIEmitter(program: Program, options: OpenAPIEmitterOptions) {
       case "Model":
         type = "model";
         break;
+      case "UnionVariant":
+        type = "model";
+        break;
       default:
         reportUnsupportedUnion();
         return {};
@@ -843,16 +849,46 @@ function createOAPIEmitter(program: Program, options: OpenAPIEmitterOptions) {
 
     const values = [];
     if (type === "model") {
-      // Model unions can only ever be a model type with 'null'
       if (nonNullOptions.length === 1) {
         // Get the schema for the model type
         const schema: any = getSchemaForType(nonNullOptions[0]);
 
         return schema;
       } else {
-        const schema: any = { anyOf: nonNullOptions.map((s) => getSchemaOrRef(s)) };
+        const isUnionVariant = (t: Type): t is UnionTypeVariant => t.kind === "UnionVariant";
+        const useOneOf = nonNullOptions.every(isUnionVariant);
+        if (useOneOf) {
+          const variants = nonNullOptions.filter(isUnionVariant);
+          const propertyName = "kind"; // TODO: allow this to be set in a decorator
+          // Mapping specifies the schema to be used for specific values of the discriminator
+          const mapping = variants.reduce(
+            (a, s) => ({
+              ...a,
+              [s.name.toString()]: getSchemaOrRef(s).$ref,
+            }),
+            {}
+          );
+          const schema: any = {
+            type: "object",
+            properties: {
+              [propertyName]: {
+                type: "string",
+              },
+            },
+            required: [propertyName],
+            discriminator: {
+              propertyName,
+              mapping,
+            },
+            oneOf: variants.map((s) => getSchemaOrRef(s)),
+          };
 
-        return schema;
+          return schema;
+        } else {
+          const schema: any = { anyOf: nonNullOptions.map((s) => getSchemaOrRef(s)) };
+
+          return schema;
+        }
       }
     }
 
@@ -875,6 +911,11 @@ function createOAPIEmitter(program: Program, options: OpenAPIEmitterOptions) {
     function reportUnsupportedUnion() {
       reportDiagnostic(program, { code: "union-unsupported", target: union });
     }
+  }
+
+  function getSchemaForUnionVariant(variant: UnionTypeVariant) {
+    const schema: any = getSchemaForType(variant.type);
+    return schema;
   }
 
   function getSchemaForArray(array: ArrayType) {

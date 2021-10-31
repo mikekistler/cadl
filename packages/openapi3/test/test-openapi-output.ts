@@ -515,6 +515,28 @@ describe("openapi3: definitions", () => {
       anyOf: [{ $ref: "#/components/schemas/Foo" }, { $ref: "#/components/schemas/Bar" }],
     });
   });
+
+  it("creates a discriminator for named unions of models", async () => {
+    const openApi = await openApiFor(`
+      model Cat {
+        meow: int32;
+      };
+      model Dog {
+        bark: string;
+      };
+      union Pet { cat: Cat, dog: Dog }
+      @resource("/")
+      namespace root {
+        op read(): { @body body: Pet };
+      }
+      `);
+    ok(openApi.components.schemas.Foo, "expected definition named Cat");
+    ok(openApi.components.schemas.Bar, "expected definition named Dog");
+    deepStrictEqual(
+      openApi.paths["/"].get.responses["200"].content["application/json"].schema.anyOf,
+      [{ $ref: "#/components/schemas/Cat" }, { $ref: "#/components/schemas/Dog" }]
+    );
+  });
 });
 
 describe("openapi3: primitives", () => {
