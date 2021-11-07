@@ -530,12 +530,51 @@ describe("openapi3: definitions", () => {
         op read(): { @body body: Pet };
       }
       `);
-    ok(openApi.components.schemas.Foo, "expected definition named Cat");
-    ok(openApi.components.schemas.Bar, "expected definition named Dog");
-    deepStrictEqual(
-      openApi.paths["/"].get.responses["200"].content["application/json"].schema.anyOf,
-      [{ $ref: "#/components/schemas/Cat" }, { $ref: "#/components/schemas/Dog" }]
-    );
+    ok(openApi.components.schemas.Cat, "expected definition named Cat");
+    ok(openApi.components.schemas.Dog, "expected definition named Dog");
+    ok(openApi.components.schemas.Pet, "expected definition named Pet");
+    deepStrictEqual(openApi.paths["/"].get.responses["200"].content["application/json"].schema, {
+      $ref: "#/components/schemas/Pet",
+    });
+    strictEqual(openApi.components.schemas.Pet.discriminator.propertyName, "kind");
+    deepStrictEqual(openApi.components.schemas.Pet.discriminator.mapping, {
+      cat: "#/components/schemas/Cat",
+      dog: "#/components/schemas/Dog",
+    });
+    deepStrictEqual(openApi.components.schemas.Pet.oneOf, [
+      { $ref: "#/components/schemas/Cat" },
+      { $ref: "#/components/schemas/Dog" },
+    ]);
+  });
+
+  it("creates a discriminator for unions of models with an inferrable discriminator", async () => {
+    const openApi = await openApiFor(`
+      model Cat {
+        kind: "cat";
+        meow: int32;
+      };
+      model Dog {
+        kind: "dog";
+        bark: string;
+      };
+      alias Pet = Cat | Dog;
+      @resource("/")
+      namespace root {
+        op read(): { @body body: Pet };
+      }
+      `);
+    ok(openApi.components.schemas.Cat, "expected definition named Cat");
+    ok(openApi.components.schemas.Dog, "expected definition named Dog");
+    const schema = openApi.paths["/"].get.responses["200"].content["application/json"].schema;
+    strictEqual(schema.discriminator.propertyName, "kind");
+    deepStrictEqual(schema.discriminator.mapping, {
+      cat: "#/components/schemas/Cat",
+      dog: "#/components/schemas/Dog",
+    });
+    deepStrictEqual(schema.oneOf, [
+      { $ref: "#/components/schemas/Cat" },
+      { $ref: "#/components/schemas/Dog" },
+    ]);
   });
 });
 

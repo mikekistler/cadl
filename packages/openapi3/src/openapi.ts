@@ -20,6 +20,7 @@ import {
   NamespaceType,
   OperationType,
   Program,
+  StringLiteralType,
   Type,
   UnionType,
   UnionTypeVariant,
@@ -41,6 +42,10 @@ import {
 } from "@cadl-lang/rest";
 import * as path from "path";
 import { reportDiagnostic } from "./lib.js";
+
+const isModelType = (t: Type): t is ModelType => t.kind === "Model";
+const isStringLiteral = (t: Type): t is StringLiteralType => t.kind === "String";
+const isUnionVariant = (t: Type): t is UnionTypeVariant => t.kind === "UnionVariant";
 
 export async function $onBuild(p: Program) {
   const options: OpenAPIEmitterOptions = {
@@ -855,9 +860,8 @@ function createOAPIEmitter(program: Program, options: OpenAPIEmitterOptions) {
 
         return schema;
       } else {
-        const isUnionVariant = (t: Type): t is UnionTypeVariant => t.kind === "UnionVariant";
-        const useOneOf = nonNullOptions.every(isUnionVariant);
-        if (useOneOf) {
+        const allUnionVariants = nonNullOptions.every(isUnionVariant);
+        if (allUnionVariants) {
           const variants = nonNullOptions.filter(isUnionVariant);
           const propertyName = "kind"; // TODO: allow this to be set in a decorator
           // Mapping specifies the schema to be used for specific values of the discriminator
@@ -884,11 +888,22 @@ function createOAPIEmitter(program: Program, options: OpenAPIEmitterOptions) {
           };
 
           return schema;
-        } else {
-          const schema: any = { anyOf: nonNullOptions.map((s) => getSchemaOrRef(s)) };
+        }
+
+        const discriminator = getDiscriminatorForUnion(union);
+        if (discriminator) {
+          const schema: any = {
+            type: "object",
+            discriminator,
+            oneOf: nonNullOptions.map((s) => getSchemaOrRef(s)),
+          };
 
           return schema;
         }
+
+        const schema: any = { anyOf: nonNullOptions.map((s) => getSchemaOrRef(s)) };
+
+        return schema;
       }
     }
 
@@ -925,6 +940,53 @@ function createOAPIEmitter(program: Program, options: OpenAPIEmitterOptions) {
       type: "array",
       items: getSchemaOrRef(target),
     };
+  }
+
+  function getDiscriminatorForUnion(union: UnionType) {
+    // Try to infer the discriminator.  For now we'll consider just a very simple pattern.
+    // 0) Every element of the union is a model
+    // 1) Every non-null element of the union has a single "StringLiteral" property.
+    // 2) The name of the single StringLiteral property is the same in all elements.
+    // 3) The value of the single StringLiteral property is distinct across all the elements.
+
+    // 0) Every element of the union is a model (which might be null)
+    if (union.options.some((t) => !isModelType(t))) {
+      return undefined;
+    }
+
+    // 1) Every model element of the union has a single "StringLiteral" property.
+    const variants = union.options.filter(isModelType).filter((t) => !isNullType(t));
+    // Need at least one variant that is not null
+    if (variants.length === 0) {
+      return undefined;
+    }
+    // function to create a map like properties but only with properties that are string literals
+    const stringLiteralProps = (t: ModelType) =>
+      new Map(Array.from(t.properties).filter(([k, v]) => isStringLiteral(v.type)));
+    if (variants.some((t) => stringLiteralProps(t).size !== 1)) {
+      return undefined;
+    }
+
+    // 2) The name of the single StringLiteral property is the same in all elements.
+    const propertyName: string = stringLiteralProps(variants[0]).keys().next().value;
+    if (variants.some((v) => stringLiteralProps(v).keys().next().value !== propertyName)) {
+      return undefined;
+    }
+
+    // 3) The value of the single StringLiteral property is distinct across all the elements.
+    const mapping: { [k: string]: any } = {};
+    variants.forEach((v) => {
+      const value = Array.from(v.properties)
+        .map(([k, v]) => v.type)
+        .filter(isStringLiteral)
+        .map((v) => v.value)[0];
+      mapping[value] = getSchemaOrRef(v).$ref;
+    });
+    if (new Set(Object.keys(mapping)).size !== variants.length) {
+      return undefined;
+    }
+
+    return { propertyName, mapping };
   }
 
   function isNullType(type: Type): boolean {
