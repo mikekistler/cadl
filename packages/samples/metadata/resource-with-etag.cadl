@@ -1,0 +1,146 @@
+import "@cadl-lang/rest";
+import "@cadl-lang/openapi3";
+
+// We want:
+// a. In http response to “get” request Etag is returned in a header
+// b. In http response to “list” request, Etag may be returned in list item (or not)
+// c. As a parameter to “create” request Etag is probably omitted
+// d. In http response to "create" or "update" request, Etag may or may not be returned in a header
+// e. In gRPC Etag is probably included in both “get” response and items “list” response
+
+// How to do it:
+// Put Etag in the model with @header and @visibility(read). @visibility(read) is not needed for OpenAPI,
+// since the header will be dropped from the schema, but presumably would be important for gRPC — to know not to send it.
+
+using Cadl.Http;
+
+@error
+model Error {
+  code: string;
+  message: string;
+}
+
+// Widgets satisfies a, b not including Etag in list item, c, d with Etag returned
+
+@route("/widgets")
+namespace widgets {
+  model Widget {
+    name: string;
+    weight: float32;
+
+    @header
+    @visibility("read")
+    Etag: string;
+  }
+
+  model WidgetList {
+    value: Widget[];
+    nextLink?: string;
+  }
+
+  model WidgetPatch {
+    @header contentType: "application/merge-patch+json";
+    name?: string;
+    weight?: float32;
+  }
+
+  @get
+  op list(): WidgetList | Error;
+  @put
+  op create(@path name: string, @body body: Widget): Widget | Error;
+  @get
+  op get(@path name: string): Widget | Error;
+  @patch
+  op update(@path name: string, @body body: WidgetPatch): Widget | Error;
+  @delete
+  op delete(@path name: string): Widget | Error;
+}
+
+// Scenario 1a:
+// Etag is a standard property in the resource -- returned on GET and LIST and PUT and PATCH.
+
+// For this case, we'd define the ETag as a regular property in the model and the header,
+// but with a different property name and specifying the true header name in the decorator.
+
+@route("/accounts")
+namespace accounts {
+  model Account {
+    name: string;
+    balance: float32;
+    etag: string;
+
+    @header("Etag")
+    @visibility("read")
+    etagHdr: string;
+  }
+
+  model AccountList {
+    value: Account[];
+    nextLink?: string;
+  }
+
+  model AccountPatch {
+    @header contentType: "application/merge-patch+json";
+    name?: string;
+    balance?: float32;
+  }
+
+  @get
+  op list(): AccountList | Error;
+  @put
+  op create(@path name: string, @body body: Account): Account | Error;
+  @get
+  op get(@path name: string): Account | Error;
+  @patch
+  op update(@path name: string, @body body: AccountPatch): Account | Error;
+  @delete
+  op delete(@path name: string): Account | Error;
+}
+
+// Scenario 1b:
+// Etag is NOT a standard property in the resource -- it is only included in the list element.
+
+// If needed I think it can be implemented with a separate model for the list element that
+// “extends” or “is” the resource and just adds the Etag property.
+
+// The ETag header could be defined in the base resource model but could not have the same name
+// as the ETag property, so it may need to specify the header name on the @header decorator.
+// Or it could be defined in a separate model and intersected into the resource model where needed.
+
+@route("/cookies")
+namespace cookies {
+  model Cookie {
+    name: string;
+    calories: float32;
+
+    @header("Etag")
+    @visibility("read")
+    etagHdr: string;
+  }
+
+  model CookieItem is Cookie {
+    etag: string;
+  }
+
+  model CookieList {
+    value: CookieItem[];
+    nextLink?: string;
+  }
+
+  model CookiePatch {
+    @header contentType: "application/merge-patch+json";
+    name?: string;
+    calories?: float32;
+  }
+
+  @get
+  op list(): CookieList | Error;
+  @put
+  op create(@path name: string, @body body: Cookie): Cookie | Error;
+  @get
+  op get(@path name: string): Cookie | Error;
+  @patch
+  op update(@path name: string, @body body: CookiePatch): Cookie | Error;
+  @delete
+  op delete(@path name: string): Cookie | Error;
+}
