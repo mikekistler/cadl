@@ -1,0 +1,68 @@
+import "@cadl-lang/rest";
+import "@cadl-lang/openapi3";
+
+using Cadl.Http;
+
+// What we want:
+// a. Single request (GET) passes request data in query params
+// b. Batch request (POST) passes and array of single request elements in request body
+// c. Response to single request uses status code, response headers, and response body
+// d. Response to batch request passes an array that encapsulates status, headers and body in each item
+
+// How to do it:
+// If we could decorate a _model_ with @query, then we could define the model properties once and then
+// use "is" to get the query projection for the single document case and use the original model in the batch case.
+// In simple cases, response headers and status code would be duplicated.  If there is a large list of response
+// headers, we could take the same approach as the query parameters: define a model with all the (undecorated)
+// headers and then use is and a decorator or projection to add @header to a separate model to be used
+// for the single request case.
+
+namespace analyze {
+  model AnalyzeParameters {
+    domain?: "phi";
+    stringIndexType?: string;
+  }
+
+  // The following model would be the result of applying some new decorator or project to AnalyzeParameters
+  // that would make each property a query parameter, e.g.
+  // @asQuery model AnalyzeQueryParameters is AnalyzeParameters;
+
+  model AnalyzeQueryParameters {
+    @query
+    domain?: "phi";
+
+    @query
+    stringIndexType?: string;
+  }
+
+  model AnalyzeResponse {
+    // Arbitrarily complex model
+    foo: string;
+    bar: int32;
+    baz: float64;
+  }
+
+  @route("/analyze")
+  @post
+  op analyze(...AnalyzeQueryParameters): {
+    @statusCode code: "200";
+    @header xMsRequestId: string;
+  } & AnalyzeResponse;
+
+  model BatchJobs {
+    jobs: AnalyzeParameters[];
+  }
+
+  model BatchJobResponse {
+    code: string;
+    xMsRequestId: string;
+    result: AnalyzeResponse;
+  }
+  model BatchResponse {
+    jobs: BatchJobResponse[];
+  }
+
+  @route("/batch")
+  @post
+  op batchAnalyze(@body body: BatchJobs): BatchResponse;
+}
