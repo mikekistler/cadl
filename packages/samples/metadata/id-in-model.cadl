@@ -1,0 +1,83 @@
+import "@cadl-lang/rest";
+import "@cadl-lang/openapi3";
+
+// We want:
+// a. In http “create” the id is sent as the final path segment of URL and not in the body
+// - [MC] In some http create scenarios, id is in request payload (path ends at the collection level)
+// b. In http “get” it is returned in the body (or not)
+// c. In gRPC it is probably in the body of both requests and responses
+
+// How to do it:
+// Specify the path param separate from the model (you have to do this anyway for "get").
+// If you want id in the response to "get", etc, then define it in the model with `@visibility("read")
+
+using Cadl.Http;
+
+@error
+model Error {
+  code: string;
+  message: string;
+}
+
+// Widgets satisfies a (not MC), b where id is returned, and probably c.
+
+@route("/widgets")
+namespace widgets {
+  model Widget {
+    @visibility("read")
+    id: string;
+    weight: float32;
+  }
+
+  model WidgetList {
+    value: Widget[];
+    nextLink?: string;
+  }
+
+  model WidgetPatch {
+    @header contentType: "application/merge-patch+json";
+    weight?: float32;
+  }
+
+  @get
+  op list(): WidgetList | Error;
+  @put
+  op create(@path id: string, @body body: Widget): Widget | Error;
+  @get
+  op get(@path id: string): Widget | Error;
+  @patch
+  op update(@path id: string, @body body: WidgetPatch): Widget | Error;
+  @delete
+  op delete(@path id: string): Widget | Error;
+}
+
+// Accounts satisfies a (MC flavor), b where id is returned, and probably c.
+
+@route("/accounts")
+namespace accounts {
+  model Account {
+    id: string;
+    weight: float32;
+  }
+
+  model AccountList {
+    value: Account[];
+    nextLink?: string;
+  }
+
+  model AccountPatch {
+    @header contentType: "application/merge-patch+json";
+    weight?: float32;
+  }
+
+  @get
+  op list(): AccountList | Error;
+  @post
+  op create(@body body: Account): Account | Error;
+  @get
+  op get(@path id: string): Account | Error;
+  @patch
+  op update(@path id: string, @body body: AccountPatch): Account | Error;
+  @delete
+  op delete(@path id: string): Account | Error;
+}
