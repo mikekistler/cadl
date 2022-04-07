@@ -1,0 +1,80 @@
+import "@cadl-lang/rest";
+import "@cadl-lang/openapi3";
+
+using Cadl.Http;
+
+// What we want:
+// Allow data that is logically part of a model is represented on the wire as http metadata
+// a. Blob properties passed in request headers
+// b. Blob Properties returned in response headers
+// c. In come cases, a request or response may consist of only http metadata
+// d. In gRPC, all of these properties would have to be be represented in the model
+
+// How to do it:
+// Define all the properties in a model and decorate each one with @header.
+// I think there should be a separate model for request headers and response headers.
+// gRPC can simply ignore the @header decorators and flow the data in the request & response message.
+
+@error
+model Error {
+  code: string;
+  message: string;
+}
+
+@route("/blob")
+namespace blob {
+
+  // In practice there might be several parameter models -- one with common params,
+  // one with params for create vs get, etc.
+  model BlobParameters {
+    @header
+    snapshot: string;
+    @header
+    versionId: string;
+    @header
+    leaseIdOptional: boolean;
+    @header
+    encryptionKey: string;
+    @header
+    ifMatch: string;
+    @header
+    ifNoneMatch: string;
+  }
+
+  // In practice there might be several properites models -- one with common properties,
+  // one with properties returned for create vs get, etc.
+  model BlobProperties {
+    @header
+    lastModified: zonedDateTime;
+    @header("x-ms-creation-time")
+    creationTime: zonedDateTime;
+    @header("x-ms-blob-type")
+    blobType: "BlockBlob" | "PageBlob" | "AppendBlob";
+    @header("x-ms-lease-state")
+    leaseState: "available" | "leased" | "expired" | "breaking" | "broken";
+    @header("Etag")
+    etag: string;
+    @header("x-ms-request-id")
+    requestId: string;
+    @header("x-ms-server-encrypted")
+    isServerEncrypted: boolean;
+    @header("x-ms-encryption-scope")
+    encryptionScope?: string;
+  }
+
+  model OctetStream {
+    @header
+    contentType: "applicaiton/octet-stream";
+    @body
+    body: bytes;
+  }
+
+  @head
+  op getProperties(...BlobParameters): {@statusCode code: 200} & BlobProperties | Error;
+
+  @route("/pageBlob")
+  namespace pageBlob {
+    @put 
+    op create(...BlobParameters, ...OctetStream): {@statusCode code: 201} & BlobProperties | Error;
+  }
+}
