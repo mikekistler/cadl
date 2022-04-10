@@ -1,0 +1,63 @@
+import "@cadl-lang/rest";
+import "@cadl-lang/openapi3";
+
+using Cadl.Http;
+
+@error
+model Error {
+  @header("x-ms-error-code")
+  codeHdr: string;
+  code: string;
+  message: string;
+}
+
+@route("/arm-resource")
+namespace ArmResource {
+  model ArmRequestMetadata {
+    ...ArmCommonHeaders;
+    @header IfMatch?: string;
+    @header IfNoneMatch?: string;
+    @query apiVersion: string;
+  }
+
+  model ArmResponseMetadata<Status> {
+    @statusCode _: Status;
+    ...ArmCommonHeaders;
+    @header requestId: string;
+    //Normally eTag would be a client property, but here, eTag is in the response schema
+    @header  eTag?: string;
+    @header  AzureAsyncOperation?: string;
+    @header("location") locationHdr?: string;
+  }
+
+  model ArmCommonHeaders {
+    //note that this could occur in the request or response of any operation [including POST actions]
+    @header clientRequestId?: string;
+  }
+
+  @secret
+  model SecretString is string {}
+
+  model FooProperties {
+    provisioningState: string;
+    adminPassword?: SecretString;
+    color: string;
+  }
+
+  model FooResource {
+    id: string;
+    @visibility("create")  // anything but "update"
+    location: string;
+    kind?: string;
+    managedBy?: string;
+    properties: FooProperties;
+  }
+
+  @withVisibility("update")
+  model FooResourceUpdate is FooResource {};
+
+  @put
+  op create(@body body: FooResource; ...ArmRequestMetadata) : ArmResponseMetadata<201> & {@body body: FooResource} | Error;
+  @patch
+  op update(@body body: FooResourceUpdate; ...ArmRequestMetadata) : ArmResponseMetadata<200> & {@body body: FooResource} | Error;
+}
